@@ -32,6 +32,13 @@ import java.io.InputStream;
 
 public class MainFragment extends Fragment {
 
+    public enum ExifCopyResult {
+        SUCCESS,
+        FILE_NOT_SELECTED,
+        READ_ONLY_URI,
+        IO_EXCEPTION
+    }
+
     private static final String TAG = "ExifCopy";
     private FragmentMainBinding binding;
 
@@ -112,20 +119,19 @@ public class MainFragment extends Fragment {
             @RequiresApi(api = Build.VERSION_CODES.N)
             @Override
             public void onClick(View view) {
-                if (targetUri != null && sourceUri != null)
-                {
-                    if(CopyExifFromSourceToTarget())
-                    {
+                switch (CopyExifFromSourceToTarget()) {
+                    case SUCCESS:
                         Snackbar.make(view, "Exif tags were successfully copied.", Snackbar.LENGTH_LONG).show();
-                    }
-                    else
-                    {
+                        break;
+                    case FILE_NOT_SELECTED:
+                        Snackbar.make(view, "Both source and target image should be selected.", Snackbar.LENGTH_LONG).show();
+                        break;
+                    case READ_ONLY_URI:
+                        Snackbar.make(view, "Selected target image URI is read-only. Please select target from actual storage paths.", Snackbar.LENGTH_LONG).show();
+                        break;
+                    default:
                         Snackbar.make(view, "Something wrong with CopyExif method. Please check the log messages.", Snackbar.LENGTH_LONG).show();
-                    }
-                }
-                else
-                {
-                    Snackbar.make(view, "Both source and target image should be selected.", Snackbar.LENGTH_LONG).show();
+                        break;
                 }
             }
         });
@@ -154,23 +160,30 @@ public class MainFragment extends Fragment {
     }
 
     @RequiresApi(api = Build.VERSION_CODES.N)
-    private boolean CopyExifFromSourceToTarget()
+    private ExifCopyResult CopyExifFromSourceToTarget()
     {
-        boolean status = false;
-        if (targetUri == null || sourceUri == null) return status;
+        if (targetUri == null || sourceUri == null) return ExifCopyResult.FILE_NOT_SELECTED;
 
         // refer to https://stackoverflow.com/questions/65516993/copy-exif-info-from-one-uri-to-the-other-with-the-new-android-scoped-storage
         InputStream ins = null;
         ParcelFileDescriptor outFd = null;
         FragmentActivity context = getActivity();
-        try  {
+
+        // In Android 10 and older versions, SAF returns read-only URI when a user selects a file from some media categories
+        // refer to https://commonsware.com/blog/2019/08/06/ACTION_OPEN_DOCUMENT-may-not-be-read-write.html
+        if (!DocumentsContractApi19.canWrite(context, targetUri)) {
+            return ExifCopyResult.READ_ONLY_URI;
+        }
+
+        ExifCopyResult result = ExifCopyResult.IO_EXCEPTION;
+        try {
             ins = context.getContentResolver().openInputStream(sourceUri);
             ExifInterface originalExif = new ExifInterface(ins);
 
             outFd = context.getContentResolver().openFileDescriptor(targetUri, "rw");
             ExifInterface newExif = new ExifInterface(outFd.getFileDescriptor());
             CopyExifAttributes(originalExif, newExif);
-            status = true;
+            result = ExifCopyResult.SUCCESS;
         } catch (IOException e) {
             Log.d(TAG, e.getMessage(), e);
         } finally {
@@ -189,7 +202,7 @@ public class MainFragment extends Fragment {
                 }
             }
         }
-        return status;
+        return result;
     }
 
     private void CopyExifAttributes(ExifInterface source, ExifInterface target) throws IOException {
