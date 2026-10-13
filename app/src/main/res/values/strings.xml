@@ -8,9 +8,16 @@
 
     <string name="select_target">Select target image</string>
     <string name="select_source">Select source image</string>
+    <string name="auto_find_source">Auto-find source from folder</string>
     <string name="execute">Execute</string>
     <string name="exclude_orientation_msg">Exclude image orientation tag</string>
 
     <string name="target_uri_default">Target image URI will be shown here.</string>
     <string name="source_uri_default">Source image URI will be shown here.</string>
+
+    <string name="target_needs_selection">Please select a target image first.</string>
+    <string name="target_no_timestamp">Target image does not contain an EXIF timestamp tag.</string>
+    <string name="searching_timestamp">Searching for matching timestamp (%1$s)...</string>
+    <string name="match_found">Found matching source: %1$s</string>
+    <string name="no_match_found">No matching image found for timestamp %1$s in selected folder.</string>
 </resources>
