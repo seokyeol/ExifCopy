@@ -2,12 +2,15 @@ package net.eufy.exifcopy;
 
 import static android.app.Activity.RESULT_OK;
 
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.media.ExifInterface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -40,6 +43,10 @@ public class MainFragment extends Fragment {
     }
 
     private static final String TAG = "ExifCopy";
+    private static final String PREFS_NAME = "ExifCopyPrefs";
+    private static final String KEY_LAST_TARGET_URI = "last_target_uri";
+    private static final String KEY_LAST_SOURCE_URI = "last_source_uri";
+
     private FragmentMainBinding binding;
 
     private ActivityResultLauncher<Intent> startGalleryForTargetIntent;
@@ -47,6 +54,8 @@ public class MainFragment extends Fragment {
 
     private Uri targetUri = null;
     private Uri sourceUri = null;
+    private Uri lastTargetUri = null;
+    private Uri lastSourceUri = null;
 
     private boolean excludeOrientation = false;
 
@@ -60,10 +69,13 @@ public class MainFragment extends Fragment {
                 new ActivityResultCallback<ActivityResult>() {
                     @Override
                     public void onActivityResult(ActivityResult result) {
-                        if (result.getResultCode() == RESULT_OK)
+                        if (result.getResultCode() == RESULT_OK && result.getData() != null)
                         {
                             targetUri = result.getData().getData();
-                            binding.targetUriText.setText(targetUri.getPath());
+                            if (targetUri != null) {
+                                saveLastTargetUri(targetUri);
+                                binding.targetUriText.setText(targetUri.getPath());
+                            }
                         }
                     }
                 });
@@ -73,10 +85,13 @@ public class MainFragment extends Fragment {
                 new ActivityResultCallback<ActivityResult>() {
                     @Override
                     public void onActivityResult(ActivityResult result) {
-                        if (result.getResultCode() == RESULT_OK)
+                        if (result.getResultCode() == RESULT_OK && result.getData() != null)
                         {
                             sourceUri = result.getData().getData();
-                            binding.sourceUriText.setText(sourceUri.getPath());
+                            if (sourceUri != null) {
+                                saveLastSourceUri(sourceUri);
+                                binding.sourceUriText.setText(sourceUri.getPath());
+                            }
                         }
                     }
                 });
@@ -94,6 +109,12 @@ public class MainFragment extends Fragment {
             public void onClick(View view) {
                 Intent galleryIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT,
                         MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    Uri lastUri = getLastTargetUri();
+                    if (lastUri != null) {
+                        galleryIntent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, lastUri);
+                    }
+                }
                 try {
                     startGalleryForTargetIntent.launch(galleryIntent);
                 } catch (Exception e) {
@@ -107,6 +128,12 @@ public class MainFragment extends Fragment {
             public void onClick(View view) {
                 Intent galleryIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT,
                         MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    Uri lastUri = getLastSourceUri();
+                    if (lastUri != null) {
+                        galleryIntent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, lastUri);
+                    }
+                }
                 try {
                     startGalleryForSourceIntent.launch(galleryIntent);
                 } catch (Exception e) {
@@ -302,6 +329,54 @@ public class MainFragment extends Fragment {
         {
            target.setAttribute(tag, value);
            Log.d(TAG, tag + ": " + value);
+        }
+    }
+
+    private Uri getLastTargetUri() {
+        if (lastTargetUri != null) {
+            return lastTargetUri;
+        }
+        Context context = getContext();
+        if (context != null) {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String uriStr = prefs.getString(KEY_LAST_TARGET_URI, null);
+            if (uriStr != null) {
+                lastTargetUri = Uri.parse(uriStr);
+            }
+        }
+        return lastTargetUri;
+    }
+
+    private Uri getLastSourceUri() {
+        if (lastSourceUri != null) {
+            return lastSourceUri;
+        }
+        Context context = getContext();
+        if (context != null) {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String uriStr = prefs.getString(KEY_LAST_SOURCE_URI, null);
+            if (uriStr != null) {
+                lastSourceUri = Uri.parse(uriStr);
+            }
+        }
+        return lastSourceUri;
+    }
+
+    private void saveLastTargetUri(Uri uri) {
+        lastTargetUri = uri;
+        Context context = getContext();
+        if (context != null && uri != null) {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            prefs.edit().putString(KEY_LAST_TARGET_URI, uri.toString()).apply();
+        }
+    }
+
+    private void saveLastSourceUri(Uri uri) {
+        lastSourceUri = uri;
+        Context context = getContext();
+        if (context != null && uri != null) {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            prefs.edit().putString(KEY_LAST_SOURCE_URI, uri.toString()).apply();
         }
     }
 }
