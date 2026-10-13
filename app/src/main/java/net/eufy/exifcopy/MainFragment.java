@@ -5,33 +5,33 @@ import static android.app.Activity.RESULT_OK;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.media.ExifInterface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
-import android.provider.MediaStore;
+import android.provider.OpenableColumns;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.CompoundButton;
 
-import androidx.activity.result.ActivityResult;
-import androidx.activity.result.ActivityResultCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.fragment.app.Fragment;
-import androidx.fragment.app.FragmentActivity;
 
 import net.eufy.exifcopy.databinding.FragmentMainBinding;
 import com.google.android.material.snackbar.Snackbar;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainFragment extends Fragment {
 
@@ -47,6 +47,93 @@ public class MainFragment extends Fragment {
     private static final String KEY_LAST_TARGET_URI = "last_target_uri";
     private static final String KEY_LAST_SOURCE_URI = "last_source_uri";
 
+    private static final String[] EXIF_TAGS = {
+        ExifInterface.TAG_APERTURE_VALUE,
+        ExifInterface.TAG_ARTIST,
+        ExifInterface.TAG_COPYRIGHT,
+        ExifInterface.TAG_DATETIME,
+        ExifInterface.TAG_DATETIME_DIGITIZED,
+        ExifInterface.TAG_DATETIME_ORIGINAL,
+        ExifInterface.TAG_DEVICE_SETTING_DESCRIPTION,
+        ExifInterface.TAG_DIGITAL_ZOOM_RATIO,
+        ExifInterface.TAG_DNG_VERSION,
+        ExifInterface.TAG_EXIF_VERSION,
+        ExifInterface.TAG_EXPOSURE_BIAS_VALUE,
+        ExifInterface.TAG_EXPOSURE_INDEX,
+        ExifInterface.TAG_EXPOSURE_MODE,
+        ExifInterface.TAG_EXPOSURE_PROGRAM,
+        ExifInterface.TAG_EXPOSURE_TIME,
+        ExifInterface.TAG_FLASH,
+        ExifInterface.TAG_FLASH_ENERGY,
+        ExifInterface.TAG_FOCAL_LENGTH,
+        ExifInterface.TAG_FOCAL_LENGTH_IN_35MM_FILM,
+        ExifInterface.TAG_FOCAL_PLANE_RESOLUTION_UNIT,
+        ExifInterface.TAG_FOCAL_PLANE_X_RESOLUTION,
+        ExifInterface.TAG_FOCAL_PLANE_Y_RESOLUTION,
+        ExifInterface.TAG_F_NUMBER,
+        ExifInterface.TAG_GAIN_CONTROL,
+        ExifInterface.TAG_GPS_ALTITUDE,
+        ExifInterface.TAG_GPS_ALTITUDE_REF,
+        ExifInterface.TAG_GPS_AREA_INFORMATION,
+        ExifInterface.TAG_GPS_DATESTAMP,
+        ExifInterface.TAG_GPS_DEST_BEARING,
+        ExifInterface.TAG_GPS_DEST_BEARING_REF,
+        ExifInterface.TAG_GPS_DEST_DISTANCE,
+        ExifInterface.TAG_GPS_DEST_DISTANCE_REF,
+        ExifInterface.TAG_GPS_DEST_LATITUDE,
+        ExifInterface.TAG_GPS_DEST_LATITUDE_REF,
+        ExifInterface.TAG_GPS_DEST_LONGITUDE,
+        ExifInterface.TAG_GPS_DEST_LONGITUDE_REF,
+        ExifInterface.TAG_GPS_DIFFERENTIAL,
+        ExifInterface.TAG_GPS_DOP,
+        ExifInterface.TAG_GPS_IMG_DIRECTION,
+        ExifInterface.TAG_GPS_IMG_DIRECTION_REF,
+        ExifInterface.TAG_GPS_LATITUDE,
+        ExifInterface.TAG_GPS_LATITUDE_REF,
+        ExifInterface.TAG_GPS_LONGITUDE,
+        ExifInterface.TAG_GPS_LONGITUDE_REF,
+        ExifInterface.TAG_GPS_MAP_DATUM,
+        ExifInterface.TAG_GPS_MEASURE_MODE,
+        ExifInterface.TAG_GPS_PROCESSING_METHOD,
+        ExifInterface.TAG_GPS_SATELLITES,
+        ExifInterface.TAG_GPS_SPEED,
+        ExifInterface.TAG_GPS_SPEED_REF,
+        ExifInterface.TAG_GPS_STATUS,
+        ExifInterface.TAG_GPS_TIMESTAMP,
+        ExifInterface.TAG_GPS_TRACK,
+        ExifInterface.TAG_GPS_TRACK_REF,
+        ExifInterface.TAG_GPS_VERSION_ID,
+        ExifInterface.TAG_IMAGE_DESCRIPTION,
+        ExifInterface.TAG_IMAGE_UNIQUE_ID,
+        ExifInterface.TAG_ISO_SPEED_RATINGS,
+        ExifInterface.TAG_LIGHT_SOURCE,
+        ExifInterface.TAG_MAKE,
+        ExifInterface.TAG_MAKER_NOTE,
+        ExifInterface.TAG_MAX_APERTURE_VALUE,
+        ExifInterface.TAG_METERING_MODE,
+        ExifInterface.TAG_MODEL,
+        ExifInterface.TAG_OFFSET_TIME,
+        ExifInterface.TAG_OFFSET_TIME_DIGITIZED,
+        ExifInterface.TAG_OFFSET_TIME_ORIGINAL,
+        ExifInterface.TAG_SCENE_CAPTURE_TYPE,
+        ExifInterface.TAG_SCENE_TYPE,
+        ExifInterface.TAG_SENSING_METHOD,
+        ExifInterface.TAG_SHUTTER_SPEED_VALUE,
+        ExifInterface.TAG_SUBJECT_AREA,
+        ExifInterface.TAG_SUBJECT_DISTANCE,
+        ExifInterface.TAG_SUBJECT_DISTANCE_RANGE,
+        ExifInterface.TAG_SUBJECT_LOCATION,
+        ExifInterface.TAG_SUBSEC_TIME,
+        ExifInterface.TAG_SUBSEC_TIME_DIGITIZED,
+        ExifInterface.TAG_SUBSEC_TIME_ORIGINAL,
+        ExifInterface.TAG_USER_COMMENT,
+        ExifInterface.TAG_WHITE_BALANCE,
+        ExifInterface.TAG_WHITE_POINT,
+        ExifInterface.TAG_Y_CB_CR_COEFFICIENTS,
+        ExifInterface.TAG_Y_CB_CR_POSITIONING,
+        ExifInterface.TAG_Y_CB_CR_SUB_SAMPLING
+    };
+
     private FragmentMainBinding binding;
 
     private ActivityResultLauncher<Intent> startGalleryForTargetIntent;
@@ -58,23 +145,22 @@ public class MainFragment extends Fragment {
     private Uri lastSourceUri = null;
 
     private boolean excludeOrientation = false;
+    private final ExecutorService executorService = Executors.newSingleThreadExecutor();
 
     @Override
     public View onCreateView(
-            LayoutInflater inflater, ViewGroup container,
+            @NonNull LayoutInflater inflater, ViewGroup container,
             Bundle savedInstanceState
     ) {
         startGalleryForTargetIntent = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
-                new ActivityResultCallback<ActivityResult>() {
-                    @Override
-                    public void onActivityResult(ActivityResult result) {
-                        if (result.getResultCode() == RESULT_OK && result.getData() != null)
-                        {
-                            targetUri = result.getData().getData();
-                            if (targetUri != null) {
-                                saveLastTargetUri(targetUri);
-                                binding.targetUriText.setText(targetUri.getPath());
+                result -> {
+                    if (result.getResultCode() == RESULT_OK && result.getData() != null) {
+                        targetUri = result.getData().getData();
+                        if (targetUri != null) {
+                            saveLastTargetUri(targetUri);
+                            if (binding != null) {
+                                binding.targetUriText.setText(getDisplayName(targetUri));
                             }
                         }
                     }
@@ -82,15 +168,13 @@ public class MainFragment extends Fragment {
 
         startGalleryForSourceIntent = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
-                new ActivityResultCallback<ActivityResult>() {
-                    @Override
-                    public void onActivityResult(ActivityResult result) {
-                        if (result.getResultCode() == RESULT_OK && result.getData() != null)
-                        {
-                            sourceUri = result.getData().getData();
-                            if (sourceUri != null) {
-                                saveLastSourceUri(sourceUri);
-                                binding.sourceUriText.setText(sourceUri.getPath());
+                result -> {
+                    if (result.getResultCode() == RESULT_OK && result.getData() != null) {
+                        sourceUri = result.getData().getData();
+                        if (sourceUri != null) {
+                            saveLastSourceUri(sourceUri);
+                            if (binding != null) {
+                                binding.sourceUriText.setText(getDisplayName(sourceUri));
                             }
                         }
                     }
@@ -98,84 +182,72 @@ public class MainFragment extends Fragment {
 
         binding = FragmentMainBinding.inflate(inflater, container, false);
         return binding.getRoot();
-
     }
 
-    public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
+    @Override
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        binding.selectTargetButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Intent galleryIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT,
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    Uri lastUri = getLastTargetUri();
-                    if (lastUri != null) {
-                        galleryIntent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, lastUri);
-                    }
-                }
-                try {
-                    startGalleryForTargetIntent.launch(galleryIntent);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
+        binding.selectTargetButton.setOnClickListener(v -> {
+            try {
+                startGalleryForTargetIntent.launch(createOpenImageIntent(getLastTargetUri()));
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to launch target image picker", e);
             }
         });
 
-        binding.selectSourceButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Intent galleryIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT,
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    Uri lastUri = getLastSourceUri();
-                    if (lastUri != null) {
-                        galleryIntent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, lastUri);
-                    }
-                }
-                try {
-                    startGalleryForSourceIntent.launch(galleryIntent);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
+        binding.selectSourceButton.setOnClickListener(v -> {
+            try {
+                startGalleryForSourceIntent.launch(createOpenImageIntent(getLastSourceUri()));
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to launch source image picker", e);
             }
         });
 
-        binding.executeButton.setOnClickListener(new View.OnClickListener() {
-            @RequiresApi(api = Build.VERSION_CODES.N)
-            @Override
-            public void onClick(View view) {
-                switch (CopyExifFromSourceToTarget()) {
-                    case SUCCESS:
-                        Snackbar.make(view, "Exif tags were successfully copied.", Snackbar.LENGTH_LONG).show();
-                        break;
-                    case FILE_NOT_SELECTED:
-                        Snackbar.make(view, "Both source and target image should be selected.", Snackbar.LENGTH_LONG).show();
-                        break;
-                    case READ_ONLY_URI:
-                        Snackbar.make(view, "Selected target image URI is read-only. Please select target from actual storage paths.", Snackbar.LENGTH_LONG).show();
-                        break;
-                    default:
-                        Snackbar.make(view, "Something wrong with CopyExif method. Please check the log messages.", Snackbar.LENGTH_LONG).show();
-                        break;
-                }
+        binding.executeButton.setOnClickListener(v -> {
+            if (targetUri == null || sourceUri == null) {
+                Snackbar.make(v, "Both source and target image should be selected.", Snackbar.LENGTH_LONG).show();
+                return;
             }
+
+            binding.executeButton.setEnabled(false);
+            Snackbar.make(v, "Copying Exif tags...", Snackbar.LENGTH_SHORT).show();
+
+            executorService.execute(() -> {
+                ExifCopyResult result = copyExifFromSourceToTarget();
+                if (getActivity() == null) return;
+                requireActivity().runOnUiThread(() -> {
+                    if (binding != null) {
+                        binding.executeButton.setEnabled(true);
+                    }
+                    View currentView = getView();
+                    if (currentView == null) return;
+
+                    switch (result) {
+                        case SUCCESS:
+                            Snackbar.make(currentView, "Exif tags were successfully copied.", Snackbar.LENGTH_LONG).show();
+                            break;
+                        case FILE_NOT_SELECTED:
+                            Snackbar.make(currentView, "Both source and target image should be selected.", Snackbar.LENGTH_LONG).show();
+                            break;
+                        case READ_ONLY_URI:
+                            Snackbar.make(currentView, "Selected target image URI is read-only. Please select target from actual storage paths.", Snackbar.LENGTH_LONG).show();
+                            break;
+                        default:
+                            Snackbar.make(currentView, "Something wrong with CopyExif method. Please check the log messages.", Snackbar.LENGTH_LONG).show();
+                            break;
+                    }
+                });
+            });
         });
 
         excludeOrientation = binding.excludeOrientationCheckbox.isChecked();
-        binding.excludeOrientationCheckbox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
-                excludeOrientation = b;
-                if(excludeOrientation)
-                {
-                    Snackbar.make(view, "Orientation tag will not be copied.", Snackbar.LENGTH_SHORT).show();
-                }
-                else
-                {
-                    Snackbar.make(view, "Orientation tag will be copied.", Snackbar.LENGTH_SHORT).show();
-                }
+        binding.excludeOrientationCheckbox.setOnCheckedChangeListener((compoundButton, isChecked) -> {
+            excludeOrientation = isChecked;
+            if (excludeOrientation) {
+                Snackbar.make(view, "Orientation tag will not be copied.", Snackbar.LENGTH_SHORT).show();
+            } else {
+                Snackbar.make(view, "Orientation tag will be copied.", Snackbar.LENGTH_SHORT).show();
             }
         });
     }
@@ -186,15 +258,48 @@ public class MainFragment extends Fragment {
         binding = null;
     }
 
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        executorService.shutdown();
+    }
+
+    private Intent createOpenImageIntent(Uri initialUri) {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && initialUri != null) {
+            intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri);
+        }
+        return intent;
+    }
+
+    private String getDisplayName(Uri uri) {
+        if (uri == null) return "";
+        Context context = getContext();
+        if (context != null) {
+            try (Cursor cursor = context.getContentResolver().query(uri,
+                    new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                    if (nameIndex != -1) {
+                        String name = cursor.getString(nameIndex);
+                        if (name != null) return name;
+                    }
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to query display name for URI: " + uri, e);
+            }
+        }
+        return uri.getLastPathSegment() != null ? uri.getLastPathSegment() : uri.getPath();
+    }
+
     @RequiresApi(api = Build.VERSION_CODES.N)
-    private ExifCopyResult CopyExifFromSourceToTarget()
-    {
+    private ExifCopyResult copyExifFromSourceToTarget() {
         if (targetUri == null || sourceUri == null) return ExifCopyResult.FILE_NOT_SELECTED;
 
-        // refer to https://stackoverflow.com/questions/65516993/copy-exif-info-from-one-uri-to-the-other-with-the-new-android-scoped-storage
-        InputStream ins = null;
-        ParcelFileDescriptor outFd = null;
-        FragmentActivity context = getActivity();
+        Context context = getContext();
+        if (context == null) return ExifCopyResult.IO_EXCEPTION;
 
         // In Android 10 and older versions, SAF returns read-only URI when a user selects a file from some media categories
         // refer to https://commonsware.com/blog/2019/08/06/ACTION_OPEN_DOCUMENT-may-not-be-read-write.html
@@ -202,133 +307,37 @@ public class MainFragment extends Fragment {
             return ExifCopyResult.READ_ONLY_URI;
         }
 
-        ExifCopyResult result = ExifCopyResult.IO_EXCEPTION;
-        try {
-            ins = context.getContentResolver().openInputStream(sourceUri);
-            ExifInterface originalExif = new ExifInterface(ins);
+        try (InputStream ins = context.getContentResolver().openInputStream(sourceUri);
+             ParcelFileDescriptor outFd = context.getContentResolver().openFileDescriptor(targetUri, "rw")) {
+            if (ins == null || outFd == null) {
+                return ExifCopyResult.IO_EXCEPTION;
+            }
 
-            outFd = context.getContentResolver().openFileDescriptor(targetUri, "rw");
+            ExifInterface originalExif = new ExifInterface(ins);
             ExifInterface newExif = new ExifInterface(outFd.getFileDescriptor());
-            CopyExifAttributes(originalExif, newExif);
-            result = ExifCopyResult.SUCCESS;
+            copyExifAttributes(originalExif, newExif);
+            return ExifCopyResult.SUCCESS;
         } catch (IOException e) {
-            Log.d(TAG, e.getMessage(), e);
-        } finally {
-            if (ins != null) {
-                try {
-                    ins.close();
-                } catch (IOException e) {
-                    Log.d(TAG, e.getMessage(), e);
-                }
-            }
-            if (outFd != null) {
-                try {
-                    outFd.close();
-                } catch (IOException e) {
-                    Log.d(TAG, e.getMessage(), e);
-                }
-            }
+            Log.e(TAG, "Failed to copy EXIF tags: " + e.getMessage(), e);
+            return ExifCopyResult.IO_EXCEPTION;
         }
-        return result;
     }
 
-    private void CopyExifAttributes(ExifInterface source, ExifInterface target) throws IOException {
-        CopyExifAttribute(source, target, ExifInterface.TAG_APERTURE_VALUE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_ARTIST);
-        CopyExifAttribute(source, target, ExifInterface.TAG_COPYRIGHT);
-        CopyExifAttribute(source, target, ExifInterface.TAG_DATETIME);
-        CopyExifAttribute(source, target, ExifInterface.TAG_DATETIME_DIGITIZED);
-        CopyExifAttribute(source, target, ExifInterface.TAG_DATETIME_ORIGINAL);
-        CopyExifAttribute(source, target, ExifInterface.TAG_DEVICE_SETTING_DESCRIPTION);
-        CopyExifAttribute(source, target, ExifInterface.TAG_DIGITAL_ZOOM_RATIO);
-        CopyExifAttribute(source, target, ExifInterface.TAG_DNG_VERSION);
-        CopyExifAttribute(source, target, ExifInterface.TAG_EXIF_VERSION);
-        CopyExifAttribute(source, target, ExifInterface.TAG_EXPOSURE_BIAS_VALUE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_EXPOSURE_INDEX);
-        CopyExifAttribute(source, target, ExifInterface.TAG_EXPOSURE_MODE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_EXPOSURE_PROGRAM);
-        CopyExifAttribute(source, target, ExifInterface.TAG_EXPOSURE_TIME);
-        CopyExifAttribute(source, target, ExifInterface.TAG_FLASH);
-        CopyExifAttribute(source, target, ExifInterface.TAG_FLASH_ENERGY);
-        CopyExifAttribute(source, target, ExifInterface.TAG_FOCAL_LENGTH);
-        CopyExifAttribute(source, target, ExifInterface.TAG_FOCAL_LENGTH_IN_35MM_FILM);
-        CopyExifAttribute(source, target, ExifInterface.TAG_FOCAL_PLANE_RESOLUTION_UNIT);
-        CopyExifAttribute(source, target, ExifInterface.TAG_FOCAL_PLANE_X_RESOLUTION);
-        CopyExifAttribute(source, target, ExifInterface.TAG_FOCAL_PLANE_Y_RESOLUTION);
-        CopyExifAttribute(source, target, ExifInterface.TAG_F_NUMBER);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GAIN_CONTROL);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_ALTITUDE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_ALTITUDE_REF);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_AREA_INFORMATION);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_DATESTAMP);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_DEST_BEARING);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_DEST_BEARING_REF);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_DEST_DISTANCE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_DEST_DISTANCE_REF);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_DEST_LATITUDE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_DEST_LATITUDE_REF);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_DEST_LONGITUDE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_DEST_LONGITUDE_REF);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_DIFFERENTIAL);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_DOP);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_IMG_DIRECTION);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_IMG_DIRECTION_REF);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_LATITUDE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_LATITUDE_REF);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_LONGITUDE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_LONGITUDE_REF);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_MAP_DATUM);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_MEASURE_MODE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_PROCESSING_METHOD);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_SATELLITES);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_SPEED);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_SPEED_REF);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_STATUS);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_TIMESTAMP);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_TRACK);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_TRACK_REF);
-        CopyExifAttribute(source, target, ExifInterface.TAG_GPS_VERSION_ID);
-        CopyExifAttribute(source, target, ExifInterface.TAG_IMAGE_DESCRIPTION);
-        CopyExifAttribute(source, target, ExifInterface.TAG_IMAGE_UNIQUE_ID);
-        CopyExifAttribute(source, target, ExifInterface.TAG_ISO_SPEED_RATINGS);
-        CopyExifAttribute(source, target, ExifInterface.TAG_LIGHT_SOURCE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_MAKE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_MAKER_NOTE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_MAX_APERTURE_VALUE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_METERING_MODE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_MODEL);
-        CopyExifAttribute(source, target, ExifInterface.TAG_OFFSET_TIME);
-        CopyExifAttribute(source, target, ExifInterface.TAG_OFFSET_TIME_DIGITIZED);
-        CopyExifAttribute(source, target, ExifInterface.TAG_OFFSET_TIME_ORIGINAL);
-        if (!excludeOrientation) CopyExifAttribute(source, target, ExifInterface.TAG_ORIENTATION);
-        CopyExifAttribute(source, target, ExifInterface.TAG_SCENE_CAPTURE_TYPE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_SCENE_TYPE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_SENSING_METHOD);
-        CopyExifAttribute(source, target, ExifInterface.TAG_SHUTTER_SPEED_VALUE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_SUBJECT_AREA);
-        CopyExifAttribute(source, target, ExifInterface.TAG_SUBJECT_DISTANCE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_SUBJECT_DISTANCE_RANGE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_SUBJECT_LOCATION);
-        CopyExifAttribute(source, target, ExifInterface.TAG_SUBSEC_TIME);
-        CopyExifAttribute(source, target, ExifInterface.TAG_SUBSEC_TIME_DIGITIZED);
-        CopyExifAttribute(source, target, ExifInterface.TAG_SUBSEC_TIME_ORIGINAL);
-        CopyExifAttribute(source, target, ExifInterface.TAG_USER_COMMENT);
-        CopyExifAttribute(source, target, ExifInterface.TAG_WHITE_BALANCE);
-        CopyExifAttribute(source, target, ExifInterface.TAG_WHITE_POINT);
-        CopyExifAttribute(source, target, ExifInterface.TAG_Y_CB_CR_COEFFICIENTS);
-        CopyExifAttribute(source, target, ExifInterface.TAG_Y_CB_CR_POSITIONING);
-        CopyExifAttribute(source, target, ExifInterface.TAG_Y_CB_CR_SUB_SAMPLING);
-
+    private void copyExifAttributes(ExifInterface source, ExifInterface target) throws IOException {
+        for (String tag : EXIF_TAGS) {
+            copyExifAttribute(source, target, tag);
+        }
+        if (!excludeOrientation) {
+            copyExifAttribute(source, target, ExifInterface.TAG_ORIENTATION);
+        }
         target.saveAttributes();
     }
 
-    private void CopyExifAttribute(ExifInterface source, ExifInterface target, String tag)
-    {
+    private void copyExifAttribute(ExifInterface source, ExifInterface target, String tag) {
         String value = source.getAttribute(tag);
-        if (value != null)
-        {
-           target.setAttribute(tag, value);
-           Log.d(TAG, tag + ": " + value);
+        if (value != null) {
+            target.setAttribute(tag, value);
+            Log.d(TAG, tag + ": " + value);
         }
     }
 

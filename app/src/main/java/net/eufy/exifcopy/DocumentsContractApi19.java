@@ -87,6 +87,9 @@ class DocumentsContractApi19 {
         return true;
     }
     public static boolean canWrite(Context context, Uri self) {
+        if (context == null || self == null) {
+            return false;
+        }
         // Ignore if grant doesn't allow write
         if (context.checkCallingOrSelfUriPermission(self, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                 != PackageManager.PERMISSION_GRANTED) {
