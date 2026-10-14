@@ -20,4 +20,6 @@
     <string name="searching_timestamp">Searching for matching timestamp (%1$s)...</string>
     <string name="match_found">Found matching source: %1$s</string>
     <string name="no_match_found">No matching image found for timestamp %1$s in selected folder.</string>
+    <string name="multiple_matches_title">Select source image (%1$d found)</string>
+    <string name="dialog_cancel">Cancel</string>
 </resources>

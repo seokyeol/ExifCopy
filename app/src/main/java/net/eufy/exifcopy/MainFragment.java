@@ -26,14 +26,17 @@ import androidx.annotation.RequiresApi;
 import androidx.fragment.app.Fragment;
 
 import net.eufy.exifcopy.databinding.FragmentMainBinding;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Queue;
 import java.util.concurrent.ExecutorService;
@@ -474,7 +477,7 @@ public class MainFragment extends Fragment {
         showSnackbar(getString(R.string.searching_timestamp, targetTimestamp));
 
         executorService.execute(() -> {
-            MatchedImageResult match = scanTreeForTimestamp(treeUri, targetTimestamp);
+            List<MatchedImageResult> matches = scanTreeForTimestamp(treeUri, targetTimestamp);
             if (getActivity() == null) return;
             requireActivity().runOnUiThread(() -> {
                 if (binding != null) {
@@ -482,34 +485,63 @@ public class MainFragment extends Fragment {
                     binding.selectSourceButton.setEnabled(true);
                     binding.executeButton.setEnabled(true);
                 }
-                if (match != null) {
-                    sourceUri = match.uri;
-                    saveLastSourceUri(match.uri);
-                    updateSourceUriDisplay();
-                    showSnackbar(getString(R.string.match_found, match.displayName));
-                } else {
+                if (matches.isEmpty()) {
                     showSnackbar(getString(R.string.no_match_found, targetTimestamp));
+                } else if (matches.size() == 1) {
+                    MatchedImageResult singleMatch = matches.get(0);
+                    setSourceImage(singleMatch);
+                    showSnackbar(getString(R.string.match_found, singleMatch.displayName));
+                } else {
+                    showMultipleMatchesDialog(matches);
                 }
             });
         });
     }
 
-    private MatchedImageResult scanTreeForTimestamp(Uri treeUri, String targetTimestamp) {
+    private void setSourceImage(MatchedImageResult match) {
+        sourceUri = match.uri;
+        saveLastSourceUri(match.uri);
+        updateSourceUriDisplay();
+    }
+
+    private void showMultipleMatchesDialog(List<MatchedImageResult> matches) {
         Context context = getContext();
-        if (context == null || treeUri == null) return null;
+        if (context == null) return;
+
+        CharSequence[] items = new CharSequence[matches.size()];
+        for (int i = 0; i < matches.size(); i++) {
+            items[i] = matches.get(i).displayName;
+        }
+
+        new MaterialAlertDialogBuilder(context)
+                .setTitle(getString(R.string.multiple_matches_title, matches.size()))
+                .setItems(items, (dialog, which) -> {
+                    MatchedImageResult selected = matches.get(which);
+                    setSourceImage(selected);
+                    showSnackbar(getString(R.string.match_found, selected.displayName));
+                })
+                .setNegativeButton(R.string.dialog_cancel, null)
+                .show();
+    }
+
+    private List<MatchedImageResult> scanTreeForTimestamp(Uri treeUri, String targetTimestamp) {
+        List<MatchedImageResult> matches = new ArrayList<>();
+        Context context = getContext();
+        if (context == null || treeUri == null) return matches;
 
         String rootDocId = DocumentsContract.getTreeDocumentId(treeUri);
         Queue<ScanNode> queue = new LinkedList<>();
         queue.add(new ScanNode(rootDocId, 0));
 
         final int MAX_DEPTH = 3;
+        final int MAX_MATCHES = 50;
         final String[] projection = new String[]{
                 DocumentsContract.Document.COLUMN_DOCUMENT_ID,
                 DocumentsContract.Document.COLUMN_DISPLAY_NAME,
                 DocumentsContract.Document.COLUMN_MIME_TYPE
         };
 
-        while (!queue.isEmpty() && !Thread.currentThread().isInterrupted()) {
+        while (!queue.isEmpty() && !Thread.currentThread().isInterrupted() && matches.size() < MAX_MATCHES) {
             ScanNode current = queue.poll();
             Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, current.docId);
 
@@ -520,7 +552,7 @@ public class MainFragment extends Fragment {
                 int nameCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
                 int mimeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE);
 
-                while (cursor.moveToNext() && !Thread.currentThread().isInterrupted()) {
+                while (cursor.moveToNext() && !Thread.currentThread().isInterrupted() && matches.size() < MAX_MATCHES) {
                     String docId = cursor.getString(idCol);
                     String displayName = cursor.getString(nameCol);
                     String mimeType = cursor.getString(mimeCol);
@@ -533,7 +565,7 @@ public class MainFragment extends Fragment {
                         Uri childDocUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId);
                         String candidateTimestamp = getCandidateTimestampMatchingTarget(childDocUri, targetTimestamp);
                         if (candidateTimestamp != null) {
-                            return new MatchedImageResult(childDocUri, displayName, candidateTimestamp);
+                            matches.add(new MatchedImageResult(childDocUri, displayName, candidateTimestamp));
                         }
                     }
                 }
@@ -541,7 +573,7 @@ public class MainFragment extends Fragment {
                 Log.w(TAG, "Error querying directory children for " + current.docId, e);
             }
         }
-        return null;
+        return matches;
     }
 
     private String getCandidateTimestampMatchingTarget(Uri uri, String targetTimestamp) {
